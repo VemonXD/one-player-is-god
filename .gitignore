@@ -1,0 +1,19 @@
+# Roblox Studio lock and backup files
+*.rbxlx.lock
+*backup*.rbxlx
+
+# Generated verification places
+Phase 2 Test.rbxlx
+Phase 2 Verification.rbxlx
+
+# Local tooling and generated documents
+tmp/
+output/
+tools/
+
+# Common local files
+.DS_Store
+Thumbs.db
+__pycache__/
+*.pyc
+

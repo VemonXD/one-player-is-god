@@ -1,0 +1,767 @@
+<?xml version='1.0' encoding='utf-8'?>
+<roblox version="4">
+  <External>null</External>
+  <External>nil</External>
+  <Item class="Workspace" referent="RBX1">
+    <Properties>
+      <string name="Name">Workspace</string>
+      <float name="FallenPartsDestroyHeight">-80</float>
+    </Properties>
+  </Item>
+  <Item class="ReplicatedStorage" referent="RBX2">
+    <Properties>
+      <string name="Name">ReplicatedStorage</string>
+    </Properties>
+    <Item class="Folder" referent="RBX3">
+      <Properties>
+        <string name="Name">GodGame</string>
+      </Properties>
+      <Item class="ModuleScript" referent="RBX4">
+        <Properties>
+          <string name="Name">Config</string>
+          <ProtectedString name="Source">return {
+	MinPlayers = 2,
+	Intermission = 15,
+	RoundDuration = 180,
+	RoundEndDuration = 7,
+	SurvivalCoins = 50,
+	EliminationCoins = 15,
+}
+</ProtectedString>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="RBX5">
+        <Properties>
+          <string name="Name">AbilityDefinitions</string>
+          <ProtectedString name="Source">return {
+	Lightning = {
+		DisplayName = "Lightning Strike",
+		Cooldown = 8,
+		Warning = 0.8,
+		Damage = 100,
+		Radius = 12,
+		MaxCastDistance = 250,
+		AttributionWindow = 2,
+	},
+}
+</ProtectedString>
+        </Properties>
+      </Item>
+    </Item>
+  </Item>
+  <Item class="ServerScriptService" referent="RBX6">
+    <Properties>
+      <string name="Name">ServerScriptService</string>
+    </Properties>
+    <Item class="Folder" referent="RBX7">
+      <Properties>
+        <string name="Name">GodGame</string>
+      </Properties>
+      <Item class="ModuleScript" referent="RBX8">
+        <Properties>
+          <string name="Name">World</string>
+          <ProtectedString name="Source">local World = {}
+function World.part(parent, name, size, position, color, material)
+	local p = Instance.new("Part")
+	p.Name, p.Size, p.Position = name, size, position
+	p.Anchored = true
+	p.Color = color
+	p.Material = material or Enum.Material.SmoothPlastic
+	p.TopSurface = Enum.SurfaceType.Smooth
+	p.Parent = parent
+	return p
+end
+function World.build()
+	local root = Instance.new("Folder", workspace)
+	root.Name = "GodGame"
+	World.root = root
+	World.effects = Instance.new("Folder", root)
+	World.effects.Name = "Disasters"
+	local part = World.part
+	part(root, "Island", Vector3.new(180, 8, 180), Vector3.new(0, -4, 0), Color3.fromRGB(69, 128, 97))
+	part(root, "Ocean", Vector3.new(1500, 2, 1500), Vector3.new(0, -25, 0), Color3.fromRGB(31, 90, 130))
+	for x = -1, 1 do
+		for z = -1, 1 do
+			if x ~= 0 or z ~= 0 then
+				local base = Vector3.new(x * 52, 0, z * 52)
+				part(root, "Refuge", Vector3.new(24, 14, 24), base + Vector3.new(0, 7, 0), Color3.fromRGB(208, 180, 141))
+				part(root, "Roof", Vector3.new(28, 2, 28), base + Vector3.new(0, 15, 0), Color3.fromRGB(50, 65, 83))
+				for step = 1, 7 do
+					part(root, "Stair", Vector3.new(10, step * 2, 3), base + Vector3.new(0, step, 36 - step * 3), Color3.fromRGB(164, 152, 134))
+				end
+			end
+		end
+	end
+	part(root, "Lobby", Vector3.new(70, 3, 70), Vector3.new(0, 65, 230), Color3.fromRGB(35, 43, 65))
+	for _, pos in ipairs({Vector3.new(35, 71, 230), Vector3.new(-35, 71, 230)}) do
+		part(root, "Rail", Vector3.new(2, 10, 70), pos, Color3.fromRGB(89, 111, 145))
+	end
+	for _, z in ipairs({195, 265}) do
+		part(root, "Rail", Vector3.new(70, 10, 2), Vector3.new(0, 71, z), Color3.fromRGB(89, 111, 145))
+	end
+	local spawn = Instance.new("SpawnLocation")
+	spawn.Name, spawn.Size, spawn.Position = "LobbySpawn", Vector3.new(12, 1, 12), Vector3.new(0, 67, 230)
+	spawn.Anchored, spawn.Neutral, spawn.Duration = true, true, 0
+	spawn.Parent = root
+	World.spawn = spawn
+	part(root, "GodThrone", Vector3.new(20, 3, 20), Vector3.new(0, 100, 0), Color3.fromRGB(255, 205, 92), Enum.Material.Neon)
+	game:GetService("Lighting").ClockTime = 14
+end
+return World
+</ProtectedString>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="RBX9">
+        <Properties>
+          <string name="Name">DamageService</string>
+          <ProtectedString name="Source">-- Only a lethal hit through this service can earn elimination credit.
+-- Nonlethal damage followed by a reset or environmental death earns no credit.
+local DamageService = {}
+DamageService.__index = DamageService
+function DamageService.new(isSurvivor)
+	return setmetatable({isSurvivor = isSurvivor, records = {}}, DamageService)
+end
+function DamageService:DamagePlayer(victim, amount, attacker, source, window)
+	if not self.isSurvivor(victim) or type(amount) ~= "number" or amount &lt;= 0 or amount ~= amount then return false end
+	local char = victim.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	if not hum or hum.Health &lt;= 0 or char:FindFirstChildOfClass("ForceField") then return false end
+	self.records[victim] = nil
+	if amount &gt;= hum.Health then
+		self.records[victim] = {character = char, attacker = attacker, source = source,
+			expires = workspace:GetServerTimeNow() + (window or 2)}
+	end
+	hum:TakeDamage(amount)
+	return true
+end
+function DamageService:ConsumeElimination(victim, character)
+	local hit = self.records[victim]
+	self.records[victim] = nil
+	local hum = character and character:FindFirstChildOfClass("Humanoid")
+	if hit and hit.character == character and hum and hum.Health &lt;= 0
+		and workspace:GetServerTimeNow() &lt;= hit.expires then return hit end
+	return nil
+end
+function DamageService:Clear(player)
+	if player then self.records[player] = nil else table.clear(self.records) end
+end
+return DamageService
+</ProtectedString>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="RBX10">
+        <Properties>
+          <string name="Name">AbilityService</string>
+          <ProtectedString name="Source">local Players = game:GetService("Players")
+local Debris = game:GetService("Debris")
+local Definitions = require(game.ReplicatedStorage.GodGame.AbilityDefinitions)
+local World = require(script.Parent.World)
+local AbilityService = {}
+AbilityService.__index = AbilityService
+function AbilityService.new(context, damage)
+	return setmetatable({context = context, damage = damage, cooldowns = {}, requests = {}}, AbilityService)
+end
+function AbilityService:Reset()
+	table.clear(self.cooldowns)
+	for _, player in ipairs(Players:GetPlayers()) do
+		for name in pairs(Definitions) do player:SetAttribute(name .. "ReadyAt", 0) end
+	end
+end
+function AbilityService:RemovePlayer(player)
+	self.requests[player] = nil
+	self.cooldowns[player] = nil
+end
+function AbilityService:Validate(player, name, target)
+	if not player or player.Parent ~= Players then return false, "Player unavailable" end
+	local now = workspace:GetServerTimeNow()
+	if now - (self.requests[player] or -math.huge) &lt; 0.15 then return false, "Rate limited" end
+	self.requests[player] = now
+	if not self.context.isActive() then return false, "Round is not active" end
+	if player ~= self.context.god() or player:GetAttribute("Role") ~= "God" then return false, "Only God can cast" end
+	if typeof(name) ~= "string" or not Definitions[name] then return false, "Unknown ability" end
+	local spec = Definitions[name]
+	if typeof(target) ~= "Vector3" then return false, "Invalid target" end
+	for _, n in ipairs({target.X, target.Y, target.Z}) do
+		if n ~= n or math.abs(n) == math.huge then return false, "Invalid target" end
+	end
+	local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+	if not root or not hum or hum.Health &lt;= 0 then return false, "God is unavailable" end
+	if (root.Position - target).Magnitude &gt; spec.MaxCastDistance then return false, "Target is out of range" end
+	if math.abs(target.X) &gt; 90 or math.abs(target.Z) &gt; 90 or target.Y &lt; -1 or target.Y &gt; 25 then
+		return false, "Target must be on the island"
+	end
+	local ready = self.cooldowns[player] and self.cooldowns[player][name] or 0
+	if now &lt; ready then return false, "Ability is cooling down" end
+	-- Resolve height from server-owned map geometry, not the client's claimed height.
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Include
+	params.FilterDescendantsInstances = {World.root}
+	local hit = workspace:Raycast(Vector3.new(target.X, 30, target.Z), Vector3.new(0, -40, 0), params)
+	if not hit or hit.Position.Y &lt; -0.5 then return false, "Target must be on the island" end
+	return true, hit.Position
+end
+function AbilityService:Use(player, name, target)
+	local valid, result = self:Validate(player, name, target)
+	if not valid then return false, result end
+	local spec = Definitions[name]
+	local readyAt = workspace:GetServerTimeNow() + spec.Cooldown
+	self.cooldowns[player] = self.cooldowns[player] or {}
+	self.cooldowns[player][name] = readyAt
+	player:SetAttribute(name .. "ReadyAt", readyAt)
+	local token = self.context.generation()
+	local marker = World.part(World.effects, "LightningWarning", Vector3.new(0.2, spec.Radius * 2, spec.Radius * 2), result + Vector3.new(0, 0.15, 0), Color3.fromRGB(255, 55, 65), Enum.Material.Neon)
+	marker.Shape = Enum.PartType.Cylinder
+	marker.CFrame = CFrame.new(marker.Position) * CFrame.Angles(0, 0, math.pi / 2)
+	marker.Transparency = 0.35
+	marker.CanCollide, marker.CanTouch, marker.CanQuery = false, false, false
+	Debris:AddItem(marker, spec.Warning + 0.1)
+	task.delay(spec.Warning, function()
+		if not self.context.isActive() or token ~= self.context.generation() or player ~= self.context.god() then return end
+		local beam = World.part(World.effects, "LightningStrike", Vector3.new(2, 100, 2), result + Vector3.new(0, 50, 0), Color3.fromRGB(255, 250, 200), Enum.Material.Neon)
+		beam.CanCollide, beam.CanTouch, beam.CanQuery = false, false, false
+		Debris:AddItem(beam, 0.35)
+		-- A snapshot avoids skipping victims when death handlers remove them.
+		local victims = self.context.survivors()
+		for _, victim in ipairs(victims) do
+			local root = victim.Character and victim.Character:FindFirstChild("HumanoidRootPart")
+			if root and (root.Position - result).Magnitude &lt;= spec.Radius then
+				self.damage:DamagePlayer(victim, spec.Damage, player, name, spec.AttributionWindow)
+			end
+		end
+	end)
+	return true, result
+end
+return AbilityService
+</ProtectedString>
+        </Properties>
+      </Item>
+      <Item class="Script" referent="RBX11">
+        <Properties>
+          <string name="Name">Main</string>
+          <ProtectedString name="Source">local Players = game:GetService("Players")
+local Shared = game.ReplicatedStorage.GodGame
+local Config = require(Shared.Config)
+local World = require(script.Parent.World)
+local AbilityService = require(script.Parent.AbilityService)
+local DamageService = require(script.Parent.DamageService)
+local Definitions = require(Shared.AbilityDefinitions)
+local cast = Instance.new("RemoteEvent", Shared)
+cast.Name = "UseGodAbility"
+local state = Instance.new("Folder", Shared)
+state.Name = "State"
+state:SetAttribute("MinPlayers", Config.MinPlayers)
+state:SetAttribute("Build", "v03 Phase 2")
+local survivors, god, previousGod = {}, nil, nil
+local generation = 0
+local finishRound, damage, abilities
+local roundWinner
+local loading = {}
+local function setState(name, seconds, message)
+	print("[GodGame] " .. name .. " (" .. seconds .. "s)")
+	state:SetAttribute("Phase", name)
+	state:SetAttribute("EndsAt", workspace:GetServerTimeNow() + seconds)
+	state:SetAttribute("Message", message or "")
+end
+local function alive(player)
+	local h = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+	return h and h.Health &gt; 0 and player.Character:FindFirstChild("HumanoidRootPart")
+end
+local function readyPlayers()
+	local result = {}
+	for _, player in ipairs(Players:GetPlayers()) do
+		if alive(player) then table.insert(result, player) end
+	end
+	state:SetAttribute("ConnectedPlayers", #Players:GetPlayers())
+	state:SetAttribute("ReadyPlayers", #result)
+	return result
+end
+local function count()
+	local n = 0
+	for _ in pairs(survivors) do n += 1 end
+	state:SetAttribute("Survivors", n)
+	return n
+end
+local function eliminate(player, character)
+	if not survivors[player] then return end
+	survivors[player] = nil
+	player:SetAttribute("Role", "Spectator")
+	local hit = damage:ConsumeElimination(player, character)
+	if hit and hit.attacker == god and god.Parent == Players then
+		print(string.format("%s eliminated %s using %s", god.Name, player.Name, Definitions[hit.source].DisplayName))
+		-- Retain existing session currency; only attributed kills receive it.
+		god.leaderstats.Coins.Value += Config.EliminationCoins
+	end
+	if count() == 0 and state:GetAttribute("Phase") == "RoundActive" then finishRound("God", "God wins!") end
+end
+finishRound = function(winner, message)
+	if state:GetAttribute("Phase") ~= "RoundActive" then return end
+	roundWinner = winner
+	setState("RoundEnd", Config.RoundEndDuration, message)
+	generation += 1 -- Cancels pending warnings immediately.
+	state:SetAttribute("Winner", winner)
+end
+damage = DamageService.new(function(player)
+	return state:GetAttribute("Phase") == "RoundActive" and survivors[player] == true
+		and player.Parent == Players and player:GetAttribute("Role") == "Survivor"
+end)
+abilities = AbilityService.new({
+	isActive = function() return state:GetAttribute("Phase") == "RoundActive" end,
+	god = function() return god end,
+	generation = function() return generation end,
+	survivors = function()
+		local result = {}
+		for player in pairs(survivors) do table.insert(result, player) end
+		return result
+	end,
+}, damage)
+local function respawn(player)
+	if loading[player] or player.Parent ~= Players then return end
+	loading[player] = true
+	task.spawn(function()
+		local ok, err = pcall(function() player:LoadCharacterAsync() end)
+		loading[player] = nil
+		if not ok and player.Parent == Players then warn("Respawn failed: " .. tostring(err)) end
+	end)
+end
+local function setup(player)
+	player:SetAttribute("Role", "Spectator")
+	player.RespawnLocation = World.spawn
+	local stats = Instance.new("Folder", player)
+	stats.Name = "leaderstats"
+	local coins = Instance.new("IntValue", stats)
+	coins.Name = "Coins"
+	local function characterAdded(char)
+		eliminate(player, nil)
+		damage:Clear(player)
+		if player == god then finishRound("Survivors", "God reset. Survivors win!") end
+		player:SetAttribute("Role", "Spectator")
+		local hum = char:WaitForChild("Humanoid", 10)
+		local root = char:WaitForChild("HumanoidRootPart", 10)
+		if hum then hum.Died:Connect(function()
+			if player.Character ~= char then return end
+			eliminate(player, char)
+			if player == god then finishRound("Survivors", "God is gone. Survivors win!") end
+		end) end
+		if root and player.Character == char and player:GetAttribute("Role") == "Spectator" then
+			char:PivotTo(CFrame.new(0, 71, 230))
+		end
+	end
+	player.CharacterAdded:Connect(characterAdded)
+	player:GetAttributeChangedSignal("Role"):Connect(function()
+		if player:GetAttribute("Role") ~= "Survivor" then eliminate(player, nil) end
+		count()
+	end)
+	if player.Character then task.spawn(characterAdded, player.Character) end
+	readyPlayers()
+end
+cast.OnServerEvent:Connect(function(player, name, target)
+	local accepted, result = abilities:Use(player, name, target)
+	-- Avoid amplifying spam with a reply to every rate-limited request.
+	if result ~= "Rate limited" then cast:FireClient(player, accepted, result) end
+end)
+setState("Loading", 0, "Building the island...")
+World.build()
+Players.PlayerAdded:Connect(setup)
+for _, player in ipairs(Players:GetPlayers()) do setup(player) end
+Players.PlayerRemoving:Connect(function(player)
+	if player == god then finishRound("Survivors", "God left. Survivors win!") end
+	eliminate(player, nil)
+	damage:Clear(player)
+	abilities:RemovePlayer(player)
+	loading[player] = nil
+	state:SetAttribute("ConnectedPlayers", math.max(0, #Players:GetPlayers() - 1))
+end)
+-- Keep spectators physically separated even if they jump out of the lobby.
+game:GetService("RunService").Heartbeat:Connect(function()
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player:GetAttribute("Role") == "Spectator" then
+			local root = alive(player)
+			if root and (root.Position - Vector3.new(0, 71, 230)).Magnitude &gt; 42 then
+				root.AssemblyLinearVelocity = Vector3.zero
+				player.Character:PivotTo(CFrame.new(0, 71, 230))
+			end
+		end
+	end
+end)
+print("[GodGame] Server initialized, v03 Phase 2")
+while true do
+	setState("WaitingForPlayers", 0, "Waiting for at least " .. Config.MinPlayers .. " players")
+	while #readyPlayers() &lt; Config.MinPlayers do
+		local connected = #Players:GetPlayers()
+		state:SetAttribute("Message", connected &gt;= Config.MinPlayers
+			and "Waiting for player avatars to finish loading..."
+			or "Invite another player or start a 2-client test.")
+		task.wait(0.25)
+	end
+	setState("Intermission", Config.Intermission, "Get ready! God will be selected when the countdown ends.")
+	local deadline = os.clock() + Config.Intermission
+	local interrupted = false
+	repeat
+		task.wait(0.25)
+		readyPlayers()
+		if #Players:GetPlayers() &lt; Config.MinPlayers then interrupted = true; break end
+	until os.clock() &gt;= deadline
+	if interrupted then continue end
+	-- Preserve the completed countdown while a resetting avatar returns.
+	local eligible = readyPlayers()
+	if #eligible &lt; Config.MinPlayers then
+		setState("PreparingPlayers", 0, "Countdown complete. Waiting for avatars to respawn...")
+		repeat
+			task.wait(0.25)
+			eligible = readyPlayers()
+		until #eligible &gt;= Config.MinPlayers or #Players:GetPlayers() &lt; Config.MinPlayers
+	end
+	if #eligible &lt; Config.MinPlayers then continue end
+	setState("SelectingGod", 2, "Choosing God...")
+	local candidates = {}
+	for _, player in ipairs(eligible) do
+		if player.UserId ~= previousGod then table.insert(candidates, player) end
+	end
+	if #candidates == 0 then candidates = eligible end
+	god = candidates[math.random(#candidates)]
+	previousGod = god.UserId
+	survivors = {}
+	roundWinner = nil
+	damage:Clear()
+	abilities:Reset()
+	state:SetAttribute("Winner", "")
+	generation += 1
+	state:SetAttribute("GodName", god.DisplayName)
+	for i, player in ipairs(eligible) do
+		local char = player.Character
+		local hum = char:FindFirstChildOfClass("Humanoid")
+		hum.Health = hum.MaxHealth
+		local force = char:FindFirstChildOfClass("ForceField")
+		if force then force:Destroy() end
+		if player == god then
+			player:SetAttribute("Role", "God")
+			char:PivotTo(CFrame.new(0, 105, 0))
+			char.HumanoidRootPart.Anchored = true
+			for name in pairs(Definitions) do player:SetAttribute(name .. "ReadyAt", 0) end
+		else
+			player:SetAttribute("Role", "Survivor")
+			survivors[player] = true
+			local angle = i * math.pi * 2 / #eligible
+			char:PivotTo(CFrame.new(math.cos(angle) * 30, 5, math.sin(angle) * 30))
+		end
+	end
+	count()
+	task.wait(2)
+	setState("RoundActive", Config.RoundDuration, "Dodge the red warning markers to survive Lightning Strike.")
+	deadline = os.clock() + Config.RoundDuration
+	if god.Parent ~= Players or not alive(god) or god:GetAttribute("Role") ~= "God" then
+		finishRound("Survivors", "God is gone. Survivors win!")
+	elseif count() == 0 then finishRound("God", "God wins!") end
+	while state:GetAttribute("Phase") == "RoundActive" do
+		task.wait(0.25)
+		for player in pairs(survivors) do
+			local root = alive(player)
+			if not root then eliminate(player, player.Character)
+			elseif math.abs(root.Position.X) &gt; 95 or math.abs(root.Position.Z) &gt; 95 or root.Position.Y &lt; -5 then
+				player.Character:FindFirstChildOfClass("Humanoid").Health = 0
+			end
+		end
+		if state:GetAttribute("Phase") == "RoundActive" then
+			if god.Parent ~= Players or not alive(god) or god:GetAttribute("Role") ~= "God" then
+				finishRound("Survivors", "God is gone. Survivors win!")
+			elseif count() == 0 then finishRound("God", "God wins!")
+			elseif os.clock() &gt;= deadline then finishRound("Survivors", "Survivors win!") end
+		end
+	end
+	if roundWinner == "Survivors" then
+		for player in pairs(survivors) do
+			if player.Parent == Players then player.leaderstats.Coins.Value += Config.SurvivalCoins end
+		end
+	end
+	-- Leave the brief impact visible, while longer warning effects expire by Debris.
+	survivors, god = {}, nil
+	damage:Clear()
+	count()
+	for _, player in ipairs(Players:GetPlayers()) do
+		player:SetAttribute("Role", "Spectator")
+		respawn(player)
+	end
+	task.wait(Config.RoundEndDuration)
+	World.effects:ClearAllChildren()
+end
+</ProtectedString>
+        </Properties>
+      </Item>
+    </Item>
+  </Item>
+  <Item class="StarterPlayer" referent="RBX12">
+    <Properties>
+      <string name="Name">StarterPlayer</string>
+    </Properties>
+    <Item class="StarterPlayerScripts" referent="RBX13">
+      <Properties>
+        <string name="Name">StarterPlayerScripts</string>
+      </Properties>
+      <Item class="LocalScript" referent="RBX14">
+        <Properties>
+          <string name="Name">HUD</string>
+          <ProtectedString name="Source">local Players = game:GetService("Players")
+
+local RunService = game:GetService("RunService")
+
+local Input = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+
+local gui = Instance.new("ScreenGui")
+
+gui.Name, gui.ResetOnSpawn = "GodHUD", false
+
+gui.DisplayOrder = 20
+
+gui.Parent = player:WaitForChild("PlayerGui")
+
+local function label(size, pos, text)
+
+	local l = Instance.new("TextLabel", gui)
+
+	l.Size, l.Position = size, pos
+
+	l.BackgroundColor3, l.BackgroundTransparency = Color3.fromRGB(18, 24, 39), 0.12
+
+	l.TextColor3, l.Font, l.TextSize = Color3.fromRGB(240, 244, 255), Enum.Font.GothamBold, 18
+
+	l.Text, l.TextWrapped = text, true
+
+	Instance.new("UICorner", l).CornerRadius = UDim.new(0, 12)
+
+	return l
+
+end
+
+local header = label(UDim2.new(0.8, 0, 0, 65), UDim2.new(0.1, 0, 0, 12), "ONE PLAYER IS GOD")
+
+local hint = label(UDim2.new(0.8, 0, 0, 48), UDim2.new(0.1, 0, 0, 82), "")
+
+local countdown = label(UDim2.new(0.8, 0, 0, 56), UDim2.new(0.1, 0, 0, 136), "Connecting to game server...")
+
+countdown.TextSize = 26
+
+countdown.TextColor3 = Color3.fromRGB(255, 212, 112)
+
+local shared = game.ReplicatedStorage:WaitForChild("GodGame", 15)
+
+local state = shared and shared:WaitForChild("State", 15)
+
+local cast = shared and shared:WaitForChild("UseGodAbility", 15)
+
+if not state or not cast then
+
+	countdown.Text = "Game server did not start"
+
+	hint.Text = "Reopen the updated place and restart the test. Check Output for errors."
+
+	return
+
+end
+
+local bar = Instance.new("Frame", gui)
+
+bar.Size, bar.Position = UDim2.new(0.94, 0, 0, 64), UDim2.new(0.03, 0, 1, -80)
+
+bar.BackgroundTransparency = 1
+
+bar.Visible = false
+
+local names = {"Lightning"}
+
+local targeting = false
+
+local feedback, feedbackUntil = "", 0
+
+local buttons, selected = {}, "Lightning"
+
+for i, name in ipairs(names) do
+
+	local b = Instance.new("TextButton", bar)
+
+	b.Size, b.Position = UDim2.new(0.5, 0, 1, 0), UDim2.new(0.25, 0, 0, 0)
+
+	b.Font, b.TextSize, b.TextWrapped = Enum.Font.GothamBold, 15, true
+
+	b.TextColor3 = Color3.new(1, 1, 1)
+
+	Instance.new("UICorner", b).CornerRadius = UDim.new(0, 10)
+
+	b.Activated:Connect(function()
+
+		if player:GetAttribute("Role") == "God" and state:GetAttribute("Phase") == "RoundActive"
+
+			and (player:GetAttribute(name .. "ReadyAt") or 0) &lt;= workspace:GetServerTimeNow() then
+
+			targeting = true
+
+		end
+
+	end)
+
+	buttons[name] = b
+
+end
+
+local function requestTarget(pos)
+
+	if not targeting or player:GetAttribute("Role") ~= "God" or state:GetAttribute("Phase") ~= "RoundActive" then return end
+
+	local camera = workspace.CurrentCamera
+
+	if not camera then return end
+
+	local ray = camera:ScreenPointToRay(pos.X, pos.Y)
+
+	local params = RaycastParams.new()
+
+	params.FilterType = Enum.RaycastFilterType.Include
+
+	local world = workspace:FindFirstChild("GodGame")
+
+	if not world then return end
+
+	params.FilterDescendantsInstances = {world}
+
+	local hit = workspace:Raycast(ray.Origin, ray.Direction * 1000, params)
+
+	if not hit then return end
+
+	targeting = false
+
+	feedback, feedbackUntil = "Target selected...", workspace:GetServerTimeNow() + 2
+
+	cast:FireServer(selected, hit.Position)
+
+end
+
+cast.OnClientEvent:Connect(function(accepted, result)
+
+	feedback = accepted and "Lightning incoming!" or tostring(result)
+
+	feedbackUntil = workspace:GetServerTimeNow() + 2
+
+end)
+
+Input.InputBegan:Connect(function(input, processed)
+
+	if processed then return end
+
+	if input.KeyCode == Enum.KeyCode.One and player:GetAttribute("Role") == "God"
+
+		and state:GetAttribute("Phase") == "RoundActive"
+
+		and (player:GetAttribute("LightningReadyAt") or 0) &lt;= workspace:GetServerTimeNow() then targeting = true end
+
+	if input.KeyCode == Enum.KeyCode.Escape then targeting = false end
+
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then requestTarget(Input:GetMouseLocation()) end
+
+end)
+
+Input.TouchTapInWorld:Connect(function(pos, processed)
+
+	if not processed then requestTarget(pos) end
+
+end)
+
+RunService.RenderStepped:Connect(function()
+
+	local role = player:GetAttribute("Role") or "Spectator"
+
+	local phase = state:GetAttribute("Phase") or "Loading"
+
+	local now = workspace:GetServerTimeNow()
+
+	local seconds = math.max(0, math.ceil((state:GetAttribute("EndsAt") or now) - now))
+
+	local connected = state:GetAttribute("ConnectedPlayers") or #Players:GetPlayers()
+
+	local minimum = state:GetAttribute("MinPlayers") or 2
+
+	if phase == "WaitingForPlayers" then
+
+		countdown.Text = string.format("WAITING FOR PLAYERS  %d / %d", connected, minimum)
+
+	elseif phase == "Intermission" then
+
+		countdown.Text = string.format("ROUND STARTS IN %d", seconds)
+
+	elseif phase == "SelectingGod" then
+
+		countdown.Text = "CHOOSING GOD... " .. seconds
+
+	elseif phase == "RoundActive" then
+
+		countdown.Text = string.format("%s  %d:%02d", role == "Spectator" and "SPECTATING" or (role == "God" and "UNLEASH LIGHTNING" or "SURVIVE"), math.floor(seconds / 60), seconds % 60)
+
+	elseif phase == "RoundEnd" then
+
+		countdown.Text = "NEXT ROUND IN " .. seconds
+
+	else
+
+		countdown.Text = "PREPARING PLAYERS..."
+
+	end
+
+	local stats = player:FindFirstChild("leaderstats")
+
+	local coins = stats and stats:FindFirstChild("Coins")
+
+	header.Text = string.format("ONE PLAYER IS GOD • PHASE 2  |  %s  |  %d:%02d\n%s  •  %d alive  •  %d coins", phase, math.floor(seconds / 60), seconds % 60, role == "Spectator" and "SPECTATING" or role, state:GetAttribute("Survivors") or 0, coins and coins.Value or 0)
+
+	bar.Visible = role == "God" and phase == "RoundActive"
+
+	if not bar.Visible then targeting = false end
+
+	hint.Text = bar.Visible and (now &lt; feedbackUntil and feedback or (targeting
+
+		and "TARGETING: click / tap the island. Escape cancels."
+
+		or "Select Lightning Strike, then click / tap the island.")) or (role == "Spectator" and phase == "RoundActive"
+
+		and "SPECTATING — wait in the lobby for the next round." or (state:GetAttribute("Message") or ""))
+
+	for i, name in ipairs(names) do
+
+		local remaining = math.max(0, math.ceil((player:GetAttribute(name .. "ReadyAt") or 0) - now))
+
+		buttons[name].Text = "Lightning Strike" .. (remaining &gt; 0 and (" (" .. remaining .. ")") or (targeting and "\nSELECT TARGET" or "\nREADY • Click or press 1"))
+
+		buttons[name].AutoButtonColor = remaining == 0
+
+		buttons[name].BackgroundColor3 = remaining &gt; 0 and Color3.fromRGB(66, 69, 78) or Color3.fromRGB(162, 102, 37)
+
+	end
+
+	local camera = workspace.CurrentCamera
+
+	if not camera then return end
+
+	if role == "God" then
+
+		camera.CameraType = Enum.CameraType.Scriptable
+
+		camera.CFrame = CFrame.lookAt(Vector3.new(0, 210, 130), Vector3.zero)
+
+	elseif camera.CameraType == Enum.CameraType.Scriptable then
+
+		camera.CameraType = Enum.CameraType.Custom
+
+		local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+
+		if hum then camera.CameraSubject = hum end
+
+	end
+
+end)
+
+</ProtectedString>
+        </Properties>
+      </Item>
+    </Item>
+  </Item>
+</roblox>

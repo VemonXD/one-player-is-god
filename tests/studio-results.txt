@@ -1,0 +1,8 @@
+2026-09-18T21:01:58.751Z,28.751991,3574,6,Info [FLog::CreatorOutput] [Phase2Test] PASS validation: phase, role, unknown ability, type, NaN, infinity, distance, bounds, spam, cooldown
+2026-09-18T21:01:58.751Z,28.751991,3574,6,Info [FLog::CreatorOutput] [Phase2Test] PASS unrelated-death attribution
+2026-09-18T21:02:04.951Z,34.951824,3574,6,Info [FLog::CreatorOutput] [Phase2Test] PASS first kill, spectator role, immediate count, lobby respawn
+2026-09-18T21:02:07.819Z,37.819378,3938,6,Info [FLog::CreatorOutput] [Phase2Test] PASS last kill ends round and credits God
+2026-09-18T21:02:33.534Z,63.534843,3574,6,Info [FLog::CreatorOutput] [Phase2Test] PASS repeat round, reset without credit, pending warning cancellation
+2026-09-18T21:02:57.733Z,87.733955,3574,6,Info [FLog::CreatorOutput] [Phase2Test] PASS God leaving awards Survivor win
+2026-09-18T21:02:57.733Z,87.733955,3574,6,Info [FLog::CreatorOutput] [Phase2Test] ALL PASS
+
